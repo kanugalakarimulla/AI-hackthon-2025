@@ -23,10 +23,10 @@ os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 # ------------ SIDEBAR DB INPUT ------------
 st.sidebar.header("🔌 MySQL Connection")
 
-mysql_host = st.sidebar.text_input("MySQL Host", "")
-mysql_user = st.sidebar.text_input("MySQL User", "")
-mysql_password = st.sidebar.text_input("MySQL Password", "", type="password")
-mysql_db = st.sidebar.text_input("MySQL Database Name", "")
+mysql_host = st.sidebar.text_input("MySQL Host")
+mysql_user = st.sidebar.text_input("MySQL User")
+mysql_password = st.sidebar.text_input("MySQL Password", type="password")
+mysql_db = st.sidebar.text_input("MySQL Database Name")
 
 if not all([mysql_host, mysql_user, mysql_password, mysql_db]):
     st.warning("⚠️ Enter all MySQL connection details.")
@@ -59,15 +59,18 @@ else:
 # llm = Ollama(model="llama3")
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
 
-def clean_sql(raw_sql: str):
-    sql = raw_sql.strip()
+def clean_sql(s: str):
+    for x in ("```sql", "```", "undefined"):
+        s = s.replace(x, "")
+    return s.strip()
 
-    sql = sql.replace("```sql", "")
-    sql = sql.replace("```", "")
+def tiny_schema(db):
+    schema = {}
+    for t in db.get_usable_table_names():
+        df = run_query(f"SHOW COLUMNS FROM {t}")
+        schema[t] = ",".join(df["Field"].tolist())
+    return schema
 
-    sql = sql.replace("undefined", "")
-
-    return sql.strip()
 
 def nl_to_sql(question, schema_info):
     prompt = f"""
@@ -158,7 +161,7 @@ if user_query:
     st.chat_message("user").write(user_query)
 
     with st.chat_message("assistant"):
-        schema = db.get_table_info()
+        schema = tiny_schema(db)
         raw_sql = nl_to_sql(user_query, schema)
         sql_query = clean_sql(raw_sql)
 
