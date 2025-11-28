@@ -3,17 +3,27 @@ import pandas as pd
 from sqlalchemy import create_engine
 from langchain_community.utilities import SQLDatabase
 from langchain_community.llms import Ollama
+from langchain_openai import ChatOpenAI
 from io import BytesIO
+from dotenv import load_dotenv
+import os
+load_dotenv()
 
 # ------------ PAGE CONFIG ------------
 st.set_page_config(page_title="💬 SQL Chat", page_icon="💬", layout="wide")
 st.title("💬 SQL Chat with MySQL")
 
+os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+# Langsmith Tracing
+# os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY")
+# os.environ["LANGSMITH_TRACING"] = "true"
+# os.environ["LANGCHAIN_PROJECT"] = os.getenv("LANGCHAIN_PROJECT")
+
 
 # ------------ SIDEBAR DB INPUT ------------
 st.sidebar.header("🔌 MySQL Connection")
 
-mysql_host = st.sidebar.text_input("MySQL Host", "localhost:3306")
+mysql_host = st.sidebar.text_input("MySQL Host", "")
 mysql_user = st.sidebar.text_input("MySQL User", "")
 mysql_password = st.sidebar.text_input("MySQL Password", "", type="password")
 mysql_db = st.sidebar.text_input("MySQL Database Name", "")
@@ -26,8 +36,11 @@ if not all([mysql_host, mysql_user, mysql_password, mysql_db]):
 @st.cache_resource
 def connect_mysql():
     try:
+        # engine = create_engine(
+        #     f"mysql+mysqlconnector://{mysql_user}:{mysql_password}@{mysql_host}/{mysql_db}"
+        # )
         engine = create_engine(
-            f"mysql+mysqlconnector://{mysql_user}:{mysql_password}@{mysql_host}/{mysql_db}"
+            f"mysql+pymysql://{mysql_user}:{mysql_password}@{mysql_host}/{mysql_db}"
         )
         return SQLDatabase(engine)
     except Exception as e:
@@ -43,7 +56,18 @@ else:
 
 
 # ------------ LLM ------------
-llm = Ollama(model="llama3")
+# llm = Ollama(model="llama3")
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
+
+def clean_sql(raw_sql: str):
+    sql = raw_sql.strip()
+
+    sql = sql.replace("```sql", "")
+    sql = sql.replace("```", "")
+
+    sql = sql.replace("undefined", "")
+
+    return sql.strip()
 
 def nl_to_sql(question, schema_info):
     prompt = f"""
@@ -61,7 +85,8 @@ def nl_to_sql(question, schema_info):
         User Question:
         {question}
     """
-    return llm.invoke(prompt).strip()
+    response = llm.invoke(prompt)
+    return response.content.strip()
 
 
 def run_query(query: str):
@@ -134,7 +159,8 @@ if user_query:
 
     with st.chat_message("assistant"):
         schema = db.get_table_info()
-        sql_query = nl_to_sql(user_query, schema)
+        raw_sql = nl_to_sql(user_query, schema)
+        sql_query = clean_sql(raw_sql)
 
         # Show SQL
         sql_text = f"### 📝 Generated SQL Query\n```sql\n{sql_query}\n```"
